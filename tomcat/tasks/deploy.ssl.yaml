@@ -1,0 +1,106 @@
+---
+# Configuration SSL pour Tomcat
+- name: Créer le répertoire SSL pour Tomcat
+  ansible.builtin.file:
+    path: /etc/tomcat/ssl
+    owner: tomcat
+    group: tomcat
+    mode: "0750"
+    state: directory
+    recurse: true
+  become: true
+  tags:
+    - ssl
+    - tomcat_ssl
+
+
+- name: Créer le répertoire SSL alternatif pour les certificats
+  ansible.builtin.file:
+    path: /usr/share/tomcat/ssl
+    owner: tomcat
+    group: tomcat
+    mode: "0750"
+    state: directory
+    recurse: true
+  become: true
+  tags:
+    - ssl
+    - tomcat_ssl
+
+- name: Copier les certificats SSL pour Tomcat
+  ansible.builtin.copy:
+    src: "ssl/{{ item }}"
+    dest: "/etc/tomcat/ssl/{{ item }}"
+    owner: tomcat
+    group: tomcat
+    mode: "0640"
+  become: true
+  loop:
+    - "{{ ansible_hostname }}.oci.eduqc.net.key"
+    - "{{ ansible_hostname }}.oci.eduqc.net.crt"
+    - "{{ ansible_hostname }}.oci.eduqc.net.jks"
+  notify: restart tomcat
+  tags:
+    - ssl
+    - tomcat_ssl
+
+- name: Créer des liens symboliques pour les certificats (compatibilité)
+  ansible.builtin.file:
+    src: "/etc/tomcat/ssl/{{ item }}"
+    dest: "/usr/share/tomcat/ssl/{{ item }}"
+    state: link
+    owner: tomcat
+    group: tomcat
+  become: true
+  loop:
+    - "{{ ansible_hostname }}.oci.eduqc.net.key"
+    - "{{ ansible_hostname }}.oci.eduqc.net.crt"
+    - "{{ ansible_hostname }}.oci.eduqc.net.jks"
+  tags:
+    - ssl
+    - tomcat_ssl
+
+# Configuration SSL pour Maven (si nécessaire pour les repositories HTTPS)
+- name: Créer le répertoire SSL pour Maven
+  ansible.builtin.file:
+    path: /home/maven/.m2/ssl
+    owner: maven
+    group: maven
+    mode: "0750"
+    state: directory
+    recurse: true
+  become: true
+  when: maven_ssl_enabled | default(true)
+  tags:
+    - ssl
+    - maven_ssl
+
+- name: Copier les certificats CA pour Maven
+  ansible.builtin.copy:
+    src: "ssl/{{ item }}"
+    dest: "/home/maven/.m2/ssl/{{ item }}"
+    owner: maven
+    group: maven
+    mode: "0644"
+  become: true
+  loop:
+    - "{{ ansible_hostname }}.oci.eduqc.net.crt"
+  when: maven_ssl_enabled | default(false)
+  notify: restart tomcat
+  tags:
+    - ssl
+    - maven_ssl
+
+- name: Configurer le truststore Java pour SSL
+  ansible.builtin.shell: |
+    keytool -import -alias {{ ansible_hostname }} \
+    -file /etc/tomcat/ssl/{{ ansible_hostname }}.oci.eduqc.net.crt \
+    -keystore {{ java_home }}/lib/security/cacerts \
+    -storepass changeit -noprompt
+  become: true
+  register: truststore_result
+  changed_when: truststore_result.rc == 0
+  failed_when: false
+  tags:
+    - ssl
+    - java_truststore

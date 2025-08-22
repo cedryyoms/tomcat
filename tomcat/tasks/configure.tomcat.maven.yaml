@@ -1,0 +1,30 @@
+---
+# Configuration de l'intégration entre Tomcat et Maven
+
+- name: Configurer les variables d'environnement partagées
+  ansible.builtin.template:
+    src: tomcat-maven-env.sh.j2
+    dest: /etc/profile.d/tomcat-maven.sh
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+
+- name: Configurer les permissions croisées
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "/var/lib/tomcat/webapps", group: "maven", mode: "0775" }
+    - { path: "/opt/maven-workspace", group: "tomcat", mode: "0775" }
+  become: true
+
+- name: Créer un script de déploiement
+  ansible.builtin.template:
+    src: deploy-to-tomcat.sh.j2
+    dest: /usr/local/bin/deploy-to-tomcat
+    owner: root
+    group: root
+    mode: '0755'
+  become: true

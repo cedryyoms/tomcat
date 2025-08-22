@@ -1,0 +1,110 @@
+---
+# Installation des packages
+- name: Package système
+  ansible.builtin.package:
+    name:
+      - java-17-openjdk-devel
+      - javapackages-tools
+    state: present
+
+- name: Activer Java 17 par defaut
+  ansible.builtin.command: update-alternatives --set java java-17-openjdk.x86_64
+  changed_when: false
+
+# Création des groupes système
+- name: Créer les groupes système
+  ansible.builtin.group:
+    name: "{{ grp.name }}"
+    gid: "{{ grp.gid }}"
+    state: present
+  loop_control:
+    loop_var: grp
+  loop:
+    - { name: maven, gid: 52 }
+    - { name: tomcat, gid: 53 }
+
+# Création des utilisateurs
+- name: Créer l'utilisateur Maven
+  ansible.builtin.user:
+    name: maven
+    uid: 52
+    group: maven
+    home: "/home/maven" 
+    shell: /bin/bash
+    system: yes
+    create_home: yes
+
+- name: Compte de service tomcat
+  ansible.builtin.user:
+    name: tomcat
+    uid: 53
+    shell: /sbin/nologin
+    system: yes
+    create_home: false
+    group: tomcat
+
+# Création des répertoires Maven
+- name: Créer les répertoires Maven
+  ansible.builtin.file:
+    path: "{{ dir.path }}"
+    mode: "{{ dir.mode }}"
+    state: directory
+    owner: "{{ dir.owner }}"
+    group: "{{ dir.group }}"
+  become: true
+  loop_control:
+    loop_var: dir
+  loop:
+    - { path: "{{ maven_home }}", mode: "0755", owner: maven, group: maven }
+    - { path: /home/maven/.m2, mode: "0755", owner: maven, group: maven }
+    - { path: /home/maven/.m2/repository, mode: "0755", owner: maven, group: maven }
+    - { path: /opt/maven-workspace, mode: "0775", owner: maven, group: maven }
+    - { path: /var/cache/maven, mode: "0775", owner: maven, group: maven }
+    - { path: /var/log/maven, mode: "0775", owner: maven, group: maven }
+
+# Création des répertoires Tomcat
+- name: Dossier d'installation tomcat
+  ansible.builtin.file:
+    path: "{{ dir.path }}"
+    mode: "{{ dir.mode }}"
+    state: directory
+    owner: "{{ dir.owner | default('root') }}"
+    group: tomcat
+  become: true 
+  loop_control:
+    loop_var: dir
+  loop:
+    - { path: /usr/share/tomcat/bin, mode: "0775" }
+    - { path: /etc/tomcat, mode: "0775" }
+    - { path: /usr/share/java/tomcat, mode: "0775" }
+    - { path: /var/log/tomcat, mode: "0775", owner: tomcat }
+    - { path: /var/cache/tomcat/temp, mode: "0775", owner: tomcat }
+    - { path: /var/cache/tomcat/work, mode: "0775", owner: tomcat }
+    - { path: /var/lib/tomcat/webapps, mode: "0775", owner: tomcat }
+    - { path: /usr/libexec/tomcat, mode: "0775" }
+
+# Configuration Maven
+- name: Créer le fichier settings.xml Maven
+  ansible.builtin.template:
+    src: settings.xml.j2
+    dest: "/home/maven/.m2/settings.xml"
+    owner: maven
+    group: maven
+    mode: '0644'
+
+# Configuration des variables d'environnement
+- name: Configurer les variables d'environnement
+  ansible.builtin.template:
+    src: maven-tomcat-env.sh.j2
+    dest: /etc/profile.d/maven-tomcat.sh
+    mode: '0644'
+
+# Vérification de l'installation
+- name: Vérifier l'installation Java
+  ansible.builtin.command: java -version
+  register: java_version
+  changed_when: false
+
+- name: Afficher la version Java
+  ansible.builtin.debug:
+    var: java_version.stderr_lines[0]

@@ -1,0 +1,32 @@
+- name: Créer le répertoire wallet Oracle
+  ansible.builtin.file:
+    path: "{{ oracle_wallet_path }}"
+    state: directory
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: '0755'
+  become: true
+  when: oracle_autonomous_db | default(false)
+
+- name: Déployer le wallet Oracle
+  ansible.builtin.copy:
+    src: "{{ oracle_wallet_source_path }}"
+    dest: "{{ oracle_wallet_path }}"
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: '0600'
+    recurse: yes
+  become: true
+  when: oracle_autonomous_db | default(false)
+
+- name: Configure TNS_ADMIN for Tomcat
+  ansible.builtin.lineinfile:
+    path: "{{ tomcat_home }}/bin/setenv.sh"
+    line: "export TNS_ADMIN={{ oracle_wallet_path }}"
+    create: yes
+    owner: "{{ tomcat_user }}"
+    group: "{{ tomcat_group }}"
+    mode: "0755"
+  when: oracle_autonomous_db | default(false)
+  tags:
+    - database

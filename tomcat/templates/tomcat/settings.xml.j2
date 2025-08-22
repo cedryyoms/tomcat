@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 http://maven.apache.org/xsd/settings-1.0.0.xsd">
+  
+  <localRepository>/home/{{ maven_user }}/.m2/repository</localRepository>
+  
+  <profiles>
+    <profile>
+      <id>default</id>
+      <properties>
+        <maven.compiler.source>{{ java_version }}</maven.compiler.source>
+        <maven.compiler.target>{{ java_version }}</maven.compiler.target>
+      </properties>
+    </profile>
+    
+    <profile>
+      <id>tomcat10</id>
+      <properties>
+        <tomcat.version>{{ tomcat_version }}</tomcat.version>
+      </properties>
+    </profile>
+  </profiles>
+  
+  <activeProfiles>
+    <activeProfile>default</activeProfile>
+    <activeProfile>tomcat10</activeProfile>
+  </activeProfiles>
+</settings>

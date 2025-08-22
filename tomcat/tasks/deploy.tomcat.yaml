@@ -1,0 +1,232 @@
+---
+# Installation de Tomcat
+- name: Vérifier si Tomcat est déjà installé
+  ansible.builtin.stat:
+    path: /usr/share/tomcat/bin/version.sh
+  register: tomcat_installed
+
+- name: Vérifier la version de Tomcat installée
+  ansible.builtin.shell: |
+    set -o pipefail
+    cd /usr/share/tomcat/bin && ./version.sh 2>/dev/null | grep "Server version" | awk -F "/" '{print $2}' | tr -d ' \t\n\r'
+  register: tomcat_current_version
+  changed_when: false
+  failed_when: false
+  become: true
+  become_user: tomcat
+  when: tomcat_installed.stat.exists
+
+- name: Afficher la version détectée (débogage)
+  ansible.builtin.debug:
+    msg: "Version de Tomcat installée: '{{ tomcat_current_version.stdout }}'"
+  when: tomcat_installed.stat.exists
+
+- name: Définir si Tomcat doit être réinstallé
+  ansible.builtin.set_fact:
+    tomcat_needs_install: >-
+      {{ not tomcat_installed.stat.exists or
+         tomcat_current_version.stdout != env_tomcat[inventory_tomcat_group].version or
+         tomcat_force_reinstall | default(false) }}
+
+- name: Afficher le statut d'installation (débogage)
+  ansible.builtin.debug:
+    msg: "Tomcat sera {{ 'réinstallé' if tomcat_needs_install else 'conservé tel quel' }}. Version cible: {{ env_tomcat[inventory_tomcat_group].version }}"
+    
+- name: Créer les liens symboliques
+  ansible.builtin.file:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    state: link
+    owner: tomcat
+    group: tomcat
+  loop:
+    - { src: /etc/tomcat, dest: /usr/share/tomcat/conf }
+    - { src: /usr/share/java/tomcat, dest: /usr/share/tomcat/lib }
+    - { src: /var/log/tomcat, dest: /usr/share/tomcat/logs }
+    - { src: /var/cache/tomcat/temp, dest: /usr/share/tomcat/temp }
+    - { src: /var/lib/tomcat/webapps, dest: /usr/share/tomcat/webapps }
+    - { src: /var/cache/tomcat/work, dest: /usr/share/tomcat/work }
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Créer un répertoire temporaire
+  ansible.builtin.file:
+    path: /tmp/tomcat_extract
+    state: directory
+    mode: "0755"
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Extraire Tomcat
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: /staging/sources/oracle/tomcat/{{ env_tomcat[inventory_tomcat_group].source }}
+    dest: /tmp/tomcat_extract
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Trouver le nom du répertoire extrait
+  ansible.builtin.find:
+    paths: /tmp/tomcat_extract
+    file_type: directory
+    recurse: false
+  register: extracted_dir
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Définir le chemin du répertoire Tomcat
+  ansible.builtin.set_fact:
+    tomcat_extracted_dir: "{{ extracted_dir.files[0].path }}"
+  tags:
+    - tomcat_install
+
+- name: Copier les fichiers binaires
+  ansible.builtin.copy:
+    src: "{{ tomcat_extracted_dir }}/bin/"
+    dest: /usr/share/tomcat/bin/
+    remote_src: true
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Copier les fichiers de configuration
+  ansible.builtin.copy:
+    src: "{{ tomcat_extracted_dir }}/conf/"
+    dest: /etc/tomcat/
+    remote_src: true
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Copier les bibliothèques
+  ansible.builtin.copy:
+    src: "{{ tomcat_extracted_dir }}/lib/"
+    dest: /usr/share/java/tomcat/
+    remote_src: true
+    owner: tomcat
+    group: tomcat
+    mode: preserve
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Supprimer le répertoire temporaire
+  ansible.builtin.file:
+    path: /tmp/tomcat_extract
+    state: absent
+  become: true
+  tags:
+    - tomcat_install
+
+- name: Configuration Tomcat (fichiers système)
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode }}"
+  become: true
+  loop:
+    - { src: "tomcat/functions", dest: "/usr/libexec/tomcat/functions", mode: "0644" }
+    - { src: "tomcat/preamble", dest: "/usr/libexec/tomcat/preamble", mode: "0755" }
+    - { src: "tomcat/server", dest: "/usr/libexec/tomcat/server", mode: "0755" }
+    - { src: "tomcat/tomcat.service", dest: "/etc/systemd/system/tomcat.service", mode: "0644" }
+  notify: reload systemd
+  tags:
+    - tomcat_config
+
+- name: Configuration Tomcat (env)
+  ansible.builtin.copy:
+    src: "files/tomcat/tomcat.conf"
+    dest: "/etc/tomcat/tomcat.conf"
+    owner: root
+    group: tomcat
+    mode: "0644"
+  become: true
+  tags:
+    - tomcat_config
+
+- name: Configuration Tomcat (server.xml)
+  ansible.builtin.template:
+    src: "tomcat/server.xml.j2"
+    dest: "/etc/tomcat/server.xml"
+    owner: root
+    group: tomcat
+    mode: "0644"
+  become: true
+  notify: restart tomcat
+  tags:
+    - tomcat_config
+
+- name: Créer le fichier env de tomcat
+  ansible.builtin.template:
+    src: tomcat/tomcat-env.j2
+    dest: /etc/sysconfig/tomcat
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  notify: restart tomcat
+  tags:
+    - tomcat_config
+
+- name: Activer et démarrer le service Tomcat
+  ansible.builtin.systemd:
+    name: tomcat
+    state: started
+    enabled: true
+    daemon_reload: true
+  become: true
+  tags:
+    - tomcat_service
+
+- name: Configurer les utilisateurs Tomcat pour l'accès web
+  ansible.builtin.template:
+    src: "tomcat/tomcat-users.xml.j2"
+    dest: "/etc/tomcat/tomcat-users.xml"
+    owner: root
+    group: tomcat
+    mode: "0644"
+  become: true
+  notify: restart tomcat
+  tags:
+    - tomcat_config
+
+- name: Configurer context.xml pour l'application Manager
+  ansible.builtin.template:
+    src: "tomcat/context.xml.j2"
+    dest: "/usr/share/tomcat/webapps/manager/META-INF/context.xml"
+    owner: root
+    group: tomcat
+    mode: "0644"
+  become: true
+  notify: restart tomcat
+  vars:
+    tomcat_allow_remote_access: true
+  tags:
+    - tomcat_config
+
+- name: Configurer context.xml pour l'application Host Manager
+  ansible.builtin.template:
+    src: "tomcat/context.xml.j2"
+    dest: "/usr/share/tomcat/webapps/host-manager/META-INF/context.xml"
+    owner: root
+    group: tomcat
+    mode: "0644"
+  become: true
+  notify: restart tomcat
+  vars:
+    tomcat_allow_remote_access: true
+  tags:
+    - tomcat_config
+

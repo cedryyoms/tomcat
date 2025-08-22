@@ -1,0 +1,11 @@
+# Service-specific configuration file for tomcat
+# This will be sourced by systemd for the default service (tomcat.service)
+
+# Options Java spécifiques
+JAVA_OPTS=-Xms{{ env_tomcat[inventory_tomcat_group].xms | default('512m') }} \
+-Xmx{{ env_tomcat[inventory_tomcat_group].xmx | default('1024m') }} \
+-Dconfig.url={{ env_tomcat[inventory_tomcat_group].config_url | default('/logiciel/etc/oracle/ords') }} \
+-Duser.language=fr \
+-Duser.region=CA \
+-Duser.timezone="America/Toronto" \
+-Doracle.jdbc.timezoneAsRegion=false

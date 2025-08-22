@@ -1,0 +1,16 @@
+#!/bin/bash
+# Variables d'environnement pour Maven et Tomcat
+
+# Maven
+export M2_HOME={{ maven_home }}
+export MAVEN_HOME={{ maven_home }}
+
+# Java
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+
+# Tomcat
+export CATALINA_HOME=/usr/share/tomcat
+export CATALINA_BASE=/usr/share/tomcat
+
+# PATH
+export PATH=$M2_HOME/bin:$JAVA_HOME/bin:$PATH

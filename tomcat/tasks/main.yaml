@@ -1,0 +1,26 @@
+---
+- name: Configuration du systeme
+  ansible.builtin.import_tasks: configure.prereqs.yaml
+  tags:
+    - os
+    - prereqs
+  
+- name: Deployer Tomcat
+  ansible.builtin.import_tasks: deploy.tomcat.yaml
+  tags:
+    - tomcat
+
+- name: Deploiement des certificats
+  ansible.builtin.import_tasks: deploy.ssl.yaml
+  tags:
+    - ssl
+        
+- name: Deployer Maven
+  ansible.builtin.import_tasks: deploy.maven.yaml
+  tags:
+    - maven
+   
+- name: Configuration de l'intégration Tomcat-Maven
+  ansible.builtin.import_tasks: configure.tomcat-maven.yaml
+  tags:
+    - integration

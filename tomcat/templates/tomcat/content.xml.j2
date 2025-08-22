@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Context antiResourceLocking="false" privileged="true">
+  {% if tomcat_allow_remote_access %}
+    {% if tomcat_allowed_networks is defined and tomcat_allowed_networks|length > 0 %}
+    <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+           allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1|{{ tomcat_allowed_networks|join('|') }}" />
+    {% else %}
+    <!-- Valve de restriction d'accès désactivée pour permettre l'accès distant -->
+    <!-- <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+           allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" /> -->
+    {% endif %}
+  {% else %}
+    <Valve className="org.apache.catalina.valves.RemoteAddrValve"
+           allow="127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1" />
+  {% endif %}
+</Context>

@@ -1,0 +1,80 @@
+---
+# defaults file for tomcat-role
+
+inventory_tomcat_group: default
+
+# À ajouter dans defaults/main.yml
+
+
+
+# Java
+java_version: "17"
+java_home: "/usr/lib/jvm/java-17-openjdk"
+
+# Tomcat 
+tomcat_version: "10.1.15"
+tomcat_major_version: "10"
+tomcat_user: "tomcat"
+tomcat_group: "tomcat"
+tomcat_source_path: "/staging/sources/oracle/tomcat"
+tomcat_source_file: "{{ tomcat_source_path }}/apache-tomcat-{{ tomcat_version }}.tar.gz"
+tomcat_home: "/usr/share/tomcat"
+tomcat_base: "/var/lib/tomcat"
+tomcat_webapps: "{{ tomcat_base }}/webapps"
+tomcat_http_port: 8080
+tomcat_https_port: 8443
+tomcat_ajp_port: 8009
+tomcat_shutdown_port: 8005
+
+# Maven
+maven_version: "3.9.6"
+maven_home: /opt/maven
+maven_local_repository: /home/maven/.m2/repository
+maven_workspace: /opt/maven-workspace
+maven_cache_dir: /var/cache/maven
+maven_log_dir: /var/log/maven
+maven_source_path: "/staging/sources/maven"
+maven_source_file: "{{ maven_source_path }}/apache-maven-{{ maven_version }}-bin.tar.gz"
+
+# Configuration Java pour Maven
+maven_java_home: "/usr/lib/jvm/java-17-openjdk"
+maven_opts: "-Xms256m -Xmx512m"
+
+
+# Activer l'accès distant
+tomcat_allow_remote_access: true
+
+# Définir les réseaux autorisés (format regex)
+tomcat_allowed_networks:
+  - "172\.16\.0\.\d+"  # Pour le réseau 172.16.0.0/24
+
+# Rôles Tomcat
+tomcat_roles:
+  - "manager-gui"
+  - "admin-gui"
+  - "manager-script"
+  - "manager-status"
+
+# Utilisateurs Tomcat
+tomcat_users:
+  - username: "admin"
+    password: "{{ tomcat_admin_password }}"
+    roles:
+      - "manager-gui"
+      - "admin-gui"
+  # Vous pouvez ajouter d'autres utilisateurs si nécessaire
+
+
+# Intégration Tomcat-Maven
+tomcat_maven_integration: true
+maven_tomcat_plugin_version: "2.2"
+
+
+# Configuration Autonomous Database
+oracle_autonomous_db: false
+oracle_wallet_path: "/opt/tomcat/conf/wallet"
+oracle_datasource_name: "SIU_DS"
+datasource_jndi: "jdbc/{{ datasource_name }}"
+datasource_url: "jdbc:oracle:thin:@siu_high"
+datasource_username: "app_user"
+datasource_password: "{{ vault_db_password }}"

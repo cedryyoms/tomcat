@@ -1,0 +1,203 @@
+---
+# Déploiement de Maven
+
+- name: Vérifier si Maven est déjà installé
+  ansible.builtin.stat:
+    path: "{{ maven_home }}/bin/mvn"
+  register: maven_bin_check
+
+- name: Extraire Maven (seulement si nécessaire)
+  ansible.builtin.unarchive:
+    src: "{{ maven_source_file }}"
+    dest: /tmp/maven_extract
+    remote_src: true
+  when: not maven_bin_check.stat.exists
+  
+- name: Créer un répertoire temporaire pour Maven
+  ansible.builtin.file:
+    path: /tmp/maven_extract
+    state: directory
+    mode: "0755"
+  become: true
+ 
+- name: Extraire Maven depuis le stockage partagé
+  ansible.builtin.unarchive:
+    remote_src: true
+    src: "{{ maven_source_file }}"
+    dest: /tmp/maven_extract
+  become: true
+  
+
+- name: Trouver le nom du répertoire Maven extrait
+  ansible.builtin.find:
+    paths: /tmp/maven_extract
+    file_type: directory
+    recurse: false
+  register: maven_extracted_dir
+  become: true
+  tags:
+    - maven_install
+
+- name: Définir le chemin du répertoire Maven
+  ansible.builtin.set_fact:
+    maven_extracted_path: "{{ maven_extracted_dir.files[0].path }}"
+  tags:
+    - maven_install
+
+- name: Copier les fichiers binaires Maven
+  ansible.builtin.copy:
+    src: "{{ maven_extracted_path }}/bin/"
+    dest: "{{ maven_home }}/bin/"
+    remote_src: true
+    owner: maven
+    group: maven
+    mode: preserve
+  become: true
+  tags:
+    - maven_install
+
+- name: Copier les fichiers de configuration Maven
+  ansible.builtin.copy:
+    src: "{{ maven_extracted_path }}/conf/"
+    dest: "{{ maven_home }}/conf/"
+    remote_src: true
+    owner: maven
+    group: maven
+    mode: preserve
+  become: true
+  tags:
+    - maven_install
+
+- name: Copier les bibliothèques Maven
+  ansible.builtin.copy:
+    src: "{{ maven_extracted_path }}/lib/"
+    dest: "{{ maven_home }}/lib/"
+    remote_src: true
+    owner: maven
+    group: maven
+    mode: preserve
+  become: true
+  tags:
+    - maven_install
+
+- name: Copier les fichiers de documentation Maven
+  ansible.builtin.copy:
+    src: "{{ maven_extracted_path }}/boot/"
+    dest: "{{ maven_home }}/boot/"
+    remote_src: true
+    owner: maven
+    group: maven
+    mode: preserve
+  become: true
+  tags:
+    - maven_install
+
+- name: Supprimer le répertoire temporaire Maven
+  ansible.builtin.file:
+    path: /tmp/maven_extract
+    state: absent
+  become: true
+  tags:
+    - maven_install
+
+- name: Créer le lien symbolique Maven dans /usr/local/bin
+  ansible.builtin.file:
+    src: "{{ maven_home }}/bin/mvn"
+    dest: /usr/local/bin/mvn
+    state: link
+    owner: root
+    group: root
+  become: true
+  tags:
+    - maven_config
+
+- name: Créer le lien symbolique mvnDebug dans /usr/local/bin
+  ansible.builtin.file:
+    src: "{{ maven_home }}/bin/mvnDebug"
+    dest: /usr/local/bin/mvnDebug
+    state: link
+    owner: root
+    group: root
+  become: true
+  tags:
+    - maven_config
+
+- name: Configuration Maven (settings.xml global)
+  ansible.builtin.template:
+    src: "maven/settings.xml.j2"
+    dest: "{{ maven_home }}/conf/settings.xml"
+    owner: maven
+    group: maven
+    mode: "0644"
+  become: true
+  tags:
+    - maven_config
+
+- name: Configuration Maven (settings.xml utilisateur)
+  ansible.builtin.template:
+    src: "maven/settings.xml.j2"
+    dest: "/home/maven/.m2/settings.xml"
+    owner: maven
+    group: maven
+    mode: "0644"
+  become: true
+  tags:
+    - maven_config
+
+- name: Configurer les variables d'environnement Maven
+  ansible.builtin.template:
+    src: "maven/maven-env.sh.j2"
+    dest: /etc/profile.d/maven.sh
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  tags:
+    - maven_config
+
+- name: Créer le fichier de configuration Maven pour systemd
+  ansible.builtin.template:
+    src: "maven/maven.conf.j2"
+    dest: /etc/maven/maven.conf
+    owner: root
+    group: root
+    mode: "0644"
+  become: true
+  tags:
+    - maven_config
+
+- name: Créer le répertoire de configuration Maven système
+  ansible.builtin.file:
+    path: /etc/maven
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  become: true
+  tags:
+    - maven_config
+
+- name: Configurer les permissions finales pour Maven
+  ansible.builtin.file:
+    path: "{{ maven_home }}"
+    owner: maven
+    group: maven
+    recurse: yes
+  become: true
+  tags:
+    - maven_config
+
+- name: Vérifier l'installation Maven
+  ansible.builtin.command: mvn --version
+  register: maven_version_check
+  changed_when: false
+  become: true
+  become_user: maven
+  tags:
+    - maven_verify
+
+- name: Afficher la version Maven installée
+  ansible.builtin.debug:
+    msg: "{{ maven_version_check.stdout_lines }}"
+  tags:
+    - maven_verify

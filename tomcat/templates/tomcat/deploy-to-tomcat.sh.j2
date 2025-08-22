@@ -1,0 +1,208 @@
+#!/bin/bash
+# Script de déploiement automatique Maven vers Tomcat
+
+set -e
+
+# Variables d'environnement
+export JAVA_HOME="{{ java_home }}"
+export MAVEN_HOME="{{ maven_home }}"
+export CATALINA_HOME="/usr/share/tomcat"
+export TOMCAT_WEBAPPS="/var/lib/tomcat/webapps"
+export MAVEN_WORKSPACE="/opt/maven-workspace"
+
+# Configuration Tomcat Manager
+TOMCAT_MANAGER_URL="http://localhost:{{ tomcat_http_port | default('8080') }}/manager"
+TOMCAT_USER="{{ tomcat_admin_username | default('admin') }}"
+TOMCAT_PASS="{{ tomcat_admin_password | default('changeme') }}"
+
+# Couleurs pour l'affichage
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Fonction d'aide
+usage() {
+    echo "Usage: $0 [OPTIONS] <project-path>"
+    echo ""
+    echo "Options:"
+    echo "  -h, --help          Afficher cette aide"
+    echo "  -c, --clean         Nettoyer avant compilation"
+    echo "  -t, --test          Exécuter les tests"
+    echo "  -d, --deploy        Déployer automatiquement après compilation"
+    echo "  -u, --undeploy      Désinstaller l'application"
+    echo "  -w, --war-file      Spécifier directement un fichier WAR"
+    echo ""
+    echo "Exemples:"
+    echo "  $0 -c -t -d /path/to/maven/project"
+    echo "  $0 -w /path/to/app.war"
+    echo "  $0 -u myapp"
+}
+
+# Fonction de logging
+log() {
+    echo -e "${GREEN}[$(date +'%Y-%m-%d %H:%M:%S')]${NC} $1"
+}
+
+error() {
+    echo -e "${RED}[ERROR]${NC} $1" >&2
+}
+
+warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
+
+# Fonction de compilation Maven
+maven_build() {
+    local project_path="$1"
+    local clean_flag="$2"
+    local test_flag="$3"
+    
+    log "Compilation du projet Maven: $project_path"
+    
+    cd "$project_path" || {
+        error "Impossible d'accéder au répertoire: $project_path"
+        exit 1
+    }
+    
+    # Vérifier la présence du pom.xml
+    if [[ ! -f "pom.xml" ]]; then
+        error "Fichier pom.xml non trouvé dans: $project_path"
+        exit 1
+    fi
+    
+    # Construire la commande Maven
+    local mvn_cmd="mvn"
+    
+    if [[ "$clean_flag" == "true" ]]; then
+        mvn_cmd="$mvn_cmd clean"
+    fi
+    
+    mvn_cmd="$mvn_cmd package"
+    
+    if [[ "$test_flag" == "false" ]]; then
+        mvn_cmd="$mvn_cmd -DskipTests"
+    fi
+    
+    log "Exécution: $mvn_cmd"
+    $mvn_cmd
+    
+    if [[ $? -eq 0 ]]; then
+        log "Compilation réussie"
+        # Trouver le fichier WAR généré
+        WAR_FILE=$(find target -name "*.war" -type f | head -1)
+        if [[ -n "$WAR_FILE" ]]; then
+            log "Fichier WAR généré: $WAR_FILE"
+            echo "$$PWD/$$ WAR_FILE"
+        else
+            error "Aucun fichier WAR trouvé dans target/"
+            exit 1
+        fi
+    else
+        error "Échec de la compilation Maven"
+        exit 1
+    fi
+}
+
+# Fonction de déploiement vers Tomcat
+deploy_to_tomcat() {
+    local war_file="$1"
+    local app_name
+    
+    if [[ ! -f "$war_file" ]]; then
+        error "Fichier WAR non trouvé: $war_file"
+        exit 1
+    fi
+    
+    # Extraire le nom de l'application du fichier WAR
+    app_name=$(basename "$war_file" .war)
+    
+    log "Déploiement de $app_name vers Tomcat"
+    
+    # Vérifier si l'application est déjà déployée
+    if curl -s -u "$TOMCAT_USER:$TOMCAT_PASS" \
+        "$TOMCAT_MANAGER_URL/text/list" | grep -q "/$app_name"; then
+        warning "Application $app_name déjà déployée, désinstallation..."
+        undeploy_from_tomcat "$app_name"
+    fi
+    
+    # Déployer le fichier WAR
+    log "Déploiement en cours..."
+    local deploy_response
+    deploy_response=$(curl -s -u "$TOMCAT_USER:$TOMCAT_PASS" \
+        -T "$war_file" \
+        "$TOMCAT_MANAGER_URL/text/deploy?path=/$app_name&update=true")
+    
+    if echo "$deploy_response" | grep -q "OK"; then
+        log "Déploiement réussi: $app_name"
+        log "URL de l'application: http://localhost:{{ tomcat_http_port | default('8080') }}/$app_name"
+    else
+        error "Échec du déploiement: $deploy_response"
+        exit 1
+    fi
+}
+
+# Fonction de désinstallation
+undeploy_from_tomcat() {
+    local app_name="$1"
+    
+    log "Désinstallation de $app_name"
+    
+    local undeploy_response
+    undeploy_response=$(curl -s -u "$TOMCAT_USER:$TOMCAT_PASS" \
+        "$TOMCAT_MANAGER_URL/text/undeploy?path=/$app_name")
+    
+    if echo "$undeploy_response" | grep -q "OK"; then
+        log "Désinstallation réussie: $app_name"
+    else
+        error "Échec de la désinstallation: $undeploy_response"
+        exit 1
+    fi
+}
+
+# Variables par défaut
+CLEAN_FLAG="false"
+TEST_FLAG="true"
+DEPLOY_FLAG="false"
+UNDEPLOY_FLAG="false"
+WAR_FILE=""
+PROJECT_PATH=""
+
+# Analyse des arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        -c|--clean)
+            CLEAN_FLAG="true"
+            shift
+            ;;
+        -t|--test)
+            TEST_FLAG="true"
+            shift
+            ;;
+        -d|--deploy)
+            DEPLOY_FLAG="true"
+            shift
+            ;;
+        -u|--undeploy)
+            UNDEPLOY_FLAG="true"
+            shift
+            ;;
+        -w|--war-file)
+            WAR_FILE="$2"
+            shift 2
+            ;;
+        *)
+            if [[ -z "$PROJECT_PATH" ]]; then
+                PROJECT_PATH="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Logique principale
+if [[ "$UNDEPLOY_FLAG" ==

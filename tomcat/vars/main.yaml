@@ -1,0 +1,9 @@
+---
+silo: tomcat
+
+firewalld:
+  rules:
+    - zone: public
+      port: 8080/tcp
+    - zone: public
+      port: 8443/tcp
